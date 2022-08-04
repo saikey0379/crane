@@ -46,7 +46,6 @@ import (
 	_ "github.com/gocrane/crane/pkg/querybuilder-providers/prometheus"
 	"github.com/gocrane/crane/pkg/server"
 	serverconfig "github.com/gocrane/crane/pkg/server/config"
-	"github.com/gocrane/crane/pkg/server/handler/prediction"
 	"github.com/gocrane/crane/pkg/utils/target"
 	"github.com/gocrane/crane/pkg/webhooks"
 )
@@ -108,15 +107,15 @@ func Run(ctx context.Context, opts *options.Options) error {
 		return err
 	}
 	// initialize data sources and predictor
-	realtimeDataSources, histroyDataSources, _ := initDataSources(mgr, opts)
-	predictorMgr := initPredictorManager(opts, realtimeDataSources, histroyDataSources)
+	realtimeDataSources, historyDataSources, dataSourceProviders := initDataSources(mgr, opts)
+	predictorMgr := initPredictorManager(opts, realtimeDataSources, historyDataSources)
 
 	initScheme()
 	initWebhooks(mgr, opts)
-	initControllers(ctx, mgr, opts, predictorMgr, histroyDataSources[providers.PrometheusDataSource])
+	initControllers(ctx, mgr, opts, predictorMgr, historyDataSources[providers.PrometheusDataSource])
 	// initialize custom collector metrics
 	initMetricCollector(mgr)
-	runAll(ctx, mgr, predictorMgr, opts)
+	runAll(ctx, mgr, predictorMgr, dataSourceProviders[providers.PrometheusDataSource], opts)
 
 	return nil
 }
@@ -301,7 +300,7 @@ func initControllers(ctx context.Context, mgr ctrl.Manager, opts *options.Option
 			klog.Exit(err, "unable to create controller", "controller", "AnalyticsController")
 		}
 
-		if err := (&recommendation.Controller{
+		if err := (&recommendation.RecommendationController{
 			Client:     mgr.GetClient(),
 			Scheme:     mgr.GetScheme(),
 			RestMapper: mgr.GetRESTMapper(),
@@ -324,7 +323,7 @@ func initControllers(ctx context.Context, mgr ctrl.Manager, opts *options.Option
 	}
 }
 
-func runAll(ctx context.Context, mgr ctrl.Manager, predictorMgr predictor.Manager, opts *options.Options) {
+func runAll(ctx context.Context, mgr ctrl.Manager, predictorMgr predictor.Manager, provider providers.Interface, opts *options.Options) {
 	var eg errgroup.Group
 
 	eg.Go(func() error {
@@ -346,23 +345,18 @@ func runAll(ctx context.Context, mgr ctrl.Manager, predictorMgr predictor.Manage
 		if err := opts.ApplyTo(serverConfig); err != nil {
 			klog.Exit(err)
 		}
-		// use controller runtime rest config, we can not refer kubeconfig option directly because it is unexported variable in vendor/sigs.k8s.io/controller-runtime/pkg/client/config/config.go
-		serverConfig.KubeRestConfig = mgr.GetConfig()
+		serverConfig.KubeConfig = mgr.GetConfig()
+		serverConfig.Client = mgr.GetClient()
+		serverConfig.Scheme = mgr.GetScheme()
+		serverConfig.RestMapper = mgr.GetRESTMapper()
+		serverConfig.PredictorMgr = predictorMgr
+		if promProvider, ok := provider.(prom.Provider); ok {
+			serverConfig.Api = promProvider.GetPromClient()
+		}
 		craneServer, err := server.NewServer(serverConfig)
 		if err != nil {
 			klog.Exit(err)
 		}
-
-		discoveryClientSet, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
-		if err != nil {
-			klog.Exit(err, "Unable to create discover client")
-		}
-
-		scaleKindResolver := scale.NewDiscoveryScaleKindResolver(discoveryClientSet)
-		scaleClient := scale.New(discoveryClientSet.RESTClient(), mgr.GetRESTMapper(), dynamic.LegacyAPIPathResolverFunc, scaleKindResolver)
-		selectorFetcher := target.NewSelectorFetcher(mgr.GetScheme(), mgr.GetRESTMapper(), scaleClient, mgr.GetClient())
-		ctx = context.WithValue(ctx, prediction.PredictorManagerKey, predictorMgr)
-		ctx = context.WithValue(ctx, prediction.SelectorFetcherKey, selectorFetcher)
 
 		craneServer.Run(ctx)
 		return nil

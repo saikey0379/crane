@@ -13,7 +13,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	analysisv1alph1 "github.com/gocrane/api/analysis/v1alpha1"
 
@@ -21,8 +23,8 @@ import (
 	"github.com/gocrane/crane/pkg/providers"
 )
 
-// Controller is responsible for reconcile Recommendation
-type Controller struct {
+// RecommendationController is responsible for reconcile Recommendation
+type RecommendationController struct {
 	client.Client
 	ConfigSet    *analysisv1alph1.ConfigSet
 	Scheme       *runtime.Scheme
@@ -33,7 +35,7 @@ type Controller struct {
 	Provider     providers.History
 }
 
-func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (c *RecommendationController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	klog.V(4).Infof("Got Recommendation %s", req.NamespacedName)
 
 	recommendation := &analysisv1alph1.Recommendation{}
@@ -73,7 +75,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (c *Controller) UpdateStatus(ctx context.Context, recommendation *analysisv1alph1.Recommendation, newStatus *analysisv1alph1.RecommendationStatus) {
+func (c *RecommendationController) UpdateStatus(ctx context.Context, recommendation *analysisv1alph1.Recommendation, newStatus *analysisv1alph1.RecommendationStatus) {
 	if !equality.Semantic.DeepEqual(&recommendation.Status, newStatus) {
 		recommendation.Status = *newStatus
 		timeNow := metav1.Now()
@@ -90,9 +92,9 @@ func (c *Controller) UpdateStatus(ctx context.Context, recommendation *analysisv
 	}
 }
 
-func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
+func (c *RecommendationController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&analysisv1alph1.Recommendation{}).
+		For(&analysisv1alph1.Recommendation{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(c)
 }
 
