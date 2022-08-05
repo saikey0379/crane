@@ -23,6 +23,11 @@ type TspMetricCollector struct {
 	externalMetricWithWindow *prometheus.Desc
 }
 
+type metricValue struct {
+	timestamp int64
+	value     float64
+}
+
 func NewTspMetricCollector(client client.Client) *TspMetricCollector {
 	return &TspMetricCollector{
 		Client: client,
@@ -110,7 +115,7 @@ func (c *TspMetricCollector) computePredictionMetric(tsp *predictionapi.TimeSeri
 			string(metricConf.Algorithm.AlgorithmType),
 		}
 
-		if metricConf.ResourceQuery != nil {
+		if metricConf.Type == "ResourceQuery" {
 			labelValues = append(labelValues, metricConf.ResourceQuery.String())
 		}
 
@@ -120,19 +125,20 @@ func (c *TspMetricCollector) computePredictionMetric(tsp *predictionapi.TimeSeri
 		})
 
 		// just one timestamp point, because prometheus collector will hash the label values, same label values is not valid
-		for _, sample := range samples {
-			if sample.Timestamp >= now {
-				ts := time.Unix(sample.Timestamp, 0)
-				value, err := strconv.ParseFloat(sample.Value, 64)
+		for _, v := range samples {
+			if v.Timestamp >= now {
+				ts := time.Unix(v.Timestamp, 0)
+				value, err := strconv.ParseFloat(v.Value, 64)
 				if err != nil {
 					klog.Error(err, "Failed to parse sample value", "value", value)
 					continue
 				}
-				// only collect resource query cpu or memory now.
+				//collect resource metric cpu or memory.
 				if metricConf.ResourceQuery != nil {
 					s := prometheus.NewMetricWithTimestamp(ts, prometheus.MustNewConstMetric(c.resourceMetric, prometheus.GaugeValue, value, labelValues...))
 					ms = append(ms, s)
 				}
+				//collect external metric.
 				if metricConf.ExpressionQuery != nil {
 					s := prometheus.NewMetricWithTimestamp(ts, prometheus.MustNewConstMetric(c.externalMetric, prometheus.GaugeValue, value, labelValues...))
 					ms = append(ms, s)
@@ -140,26 +146,45 @@ func (c *TspMetricCollector) computePredictionMetric(tsp *predictionapi.TimeSeri
 				break
 			}
 		}
+
+		// get the largest value from timeSeries
+		// use the largest value will bring up the scaling up and defer the scaling down
+		timestampStart := time.Now()
+		timestampEnd := timestampStart.Add(time.Duration(tsp.Spec.PredictionWindowSeconds) * time.Second)
+		largestMetricValue := &metricValue{}
+		hasValidSample := false
 		//hpa metrics
-		for _, sample := range samples {
-			if sample.Timestamp - int64(tsp.Spec.PredictionWindowSeconds) >= now {
-				ts := time.Unix(sample.Timestamp - int64(tsp.Spec.PredictionWindowSeconds) , 0)
-				value, err := strconv.ParseFloat(sample.Value, 64)
-				if err != nil {
-					klog.Error(err, "Failed to parse sample value", "value", value)
-					continue
-				}
-				// only collect resource query cpu or memory now.
-				if metricConf.ResourceQuery != nil {
-					s := prometheus.NewMetricWithTimestamp(ts, prometheus.MustNewConstMetric(c.resourceMetricWithWindow, prometheus.GaugeValue, value, labelValues...))
-					ms = append(ms, s)
-				}
-				if metricConf.ExpressionQuery != nil {
-					s := prometheus.NewMetricWithTimestamp(ts, prometheus.MustNewConstMetric(c.externalMetricWithWindow, prometheus.GaugeValue, value, labelValues...))
-					ms = append(ms, s)
-				}
-				break
+		for _, v := range samples {
+			if v.Timestamp < timestampStart.Unix() || v.Timestamp > timestampEnd.Unix() {
+				continue
 			}
+
+			valueFloat, err := strconv.ParseFloat(v.Value, 32)
+			if err != nil {
+				klog.Error(err, "Failed to parse sample value", "value", v.Value)
+				continue
+			}
+
+			if valueFloat > largestMetricValue.value {
+				hasValidSample = true
+				largestMetricValue.value = valueFloat
+			}
+		}
+
+		if !hasValidSample {
+			klog.Error("TimeSeries is outdated, ResourceIdentifier name %s", status.ResourceIdentifier)
+			return ms
+		}
+
+		//collect resource metric cpu or memory.
+		if metricConf.ResourceQuery != nil {
+			s := prometheus.NewMetricWithTimestamp(timestampStart, prometheus.MustNewConstMetric(c.resourceMetricWithWindow, prometheus.GaugeValue, largestMetricValue.value, labelValues...))
+			ms = append(ms, s)
+		}
+		//collect external metric.
+		if metricConf.ExpressionQuery != nil {
+			s := prometheus.NewMetricWithTimestamp(timestampStart, prometheus.MustNewConstMetric(c.externalMetricWithWindow, prometheus.GaugeValue, largestMetricValue.value, labelValues...))
+			ms = append(ms, s)
 		}
 	}
 	return ms
