@@ -19,8 +19,8 @@ type TspMetricCollector struct {
 	client.Client
 	resourceMetric *prometheus.Desc
 	externalMetric *prometheus.Desc
-	resourceMetricByWindow *prometheus.Desc
-	externalMetricByWindow *prometheus.Desc
+	resourceMetricWithWindow *prometheus.Desc
+	externalMetricWithWindow *prometheus.Desc
 }
 
 func NewTspMetricCollector(client client.Client) *TspMetricCollector {
@@ -29,13 +29,13 @@ func NewTspMetricCollector(client client.Client) *TspMetricCollector {
 		resourceMetric: prometheus.NewDesc(
 			prometheus.BuildFQName("crane", "prediction", "time_series_prediction_resource"),
 			"prediction resource value for TimeSeriesPrediction",
-			[]string{"targetKind", "targetName", "targetNamespace", "resourceIdentifier", "type", "algorithm"},
+			[]string{"targetKind", "targetName", "targetNamespace", "resourceIdentifier", "type", "algorithm", "resource"},
 			nil,
 		),
-		resourceMetricByWindow: prometheus.NewDesc(
-			prometheus.BuildFQName("crane", "prediction", "time_series_prediction_resource_by_window"),
-			"prediction resource value for TimeSeriesPrediction by predictionWindow",
-			[]string{"targetKind", "targetName", "targetNamespace", "resourceIdentifier", "type", "algorithm"},
+		resourceMetricWithWindow: prometheus.NewDesc(
+			prometheus.BuildFQName("crane", "prediction", "time_series_prediction_resource_with_window"),
+			"prediction resource value for TimeSeriesPrediction with predictionWindow",
+			[]string{"targetKind", "targetName", "targetNamespace", "resourceIdentifier", "type", "algorithm", "resource"},
 			nil,
 		),
 		externalMetric: prometheus.NewDesc(
@@ -45,9 +45,9 @@ func NewTspMetricCollector(client client.Client) *TspMetricCollector {
 			nil,
 		),
 
-		externalMetricByWindow: prometheus.NewDesc(
-			prometheus.BuildFQName("crane", "prediction", "time_series_prediction_external_by_window"),
-			"prediction external value for TimeSeriesPrediction by predictionWindow",
+		externalMetricWithWindow: prometheus.NewDesc(
+			prometheus.BuildFQName("crane", "prediction", "time_series_prediction_external_with_window"),
+			"prediction external value for TimeSeriesPrediction with predictionWindow",
 			[]string{"targetKind", "targetName", "targetNamespace", "resourceIdentifier", "type", "algorithm"},
 			nil,
 		),
@@ -59,9 +59,9 @@ func NewTspMetricCollector(client client.Client) *TspMetricCollector {
 // if use prometheus metric instrument by default, prometheus scrape will use its own scrape timestamp, so that the prediction time series maybe has wrong timestamps in prom.
 func (c *TspMetricCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.resourceMetric
-	ch <- c.resourceMetricByWindow
+	ch <- c.resourceMetricWithWindow
 	ch <- c.externalMetric
-	ch <- c.externalMetricByWindow
+	ch <- c.externalMetricWithWindow
 }
 
 func (c *TspMetricCollector) Collect(ch chan<- prometheus.Metric) {
@@ -109,6 +109,11 @@ func (c *TspMetricCollector) computePredictionMetric(tsp *predictionapi.TimeSeri
 			string(metricConf.Type),
 			string(metricConf.Algorithm.AlgorithmType),
 		}
+
+		if metricConf.ResourceQuery != nil {
+			labelValues = append(labelValues, metricConf.ResourceQuery.String())
+		}
+
 		samples := data.Samples
 		sort.Slice(samples, func(i, j int) bool {
 			return samples[i].Timestamp < samples[j].Timestamp
@@ -146,11 +151,11 @@ func (c *TspMetricCollector) computePredictionMetric(tsp *predictionapi.TimeSeri
 				}
 				// only collect resource query cpu or memory now.
 				if metricConf.ResourceQuery != nil {
-					s := prometheus.NewMetricWithTimestamp(ts, prometheus.MustNewConstMetric(c.resourceMetricByWindow, prometheus.GaugeValue, value, labelValues...))
+					s := prometheus.NewMetricWithTimestamp(ts, prometheus.MustNewConstMetric(c.resourceMetricWithWindow, prometheus.GaugeValue, value, labelValues...))
 					ms = append(ms, s)
 				}
 				if metricConf.ExpressionQuery != nil {
-					s := prometheus.NewMetricWithTimestamp(ts, prometheus.MustNewConstMetric(c.externalMetricByWindow, prometheus.GaugeValue, value, labelValues...))
+					s := prometheus.NewMetricWithTimestamp(ts, prometheus.MustNewConstMetric(c.externalMetricWithWindow, prometheus.GaugeValue, value, labelValues...))
 					ms = append(ms, s)
 				}
 				break
