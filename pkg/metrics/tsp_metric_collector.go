@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,11 +20,6 @@ type TspMetricCollector struct {
 	externalMetric *prometheus.Desc
 	resourceMetricWithWindow *prometheus.Desc
 	externalMetricWithWindow *prometheus.Desc
-}
-
-type metricValue struct {
-	timestamp int64
-	value     float64
 }
 
 func NewTspMetricCollector(client client.Client) *TspMetricCollector {
@@ -151,7 +145,8 @@ func (c *TspMetricCollector) computePredictionMetric(tsp *predictionapi.TimeSeri
 		// use the largest value will bring up the scaling up and defer the scaling down
 		timestampStart := time.Now()
 		timestampEnd := timestampStart.Add(time.Duration(tsp.Spec.PredictionWindowSeconds) * time.Second)
-		largestMetricValue := &metricValue{}
+		var metricValue float64
+
 		hasValidSample := false
 		//hpa metrics
 		for _, v := range samples {
@@ -165,9 +160,9 @@ func (c *TspMetricCollector) computePredictionMetric(tsp *predictionapi.TimeSeri
 				continue
 			}
 
-			if valueFloat > largestMetricValue.value {
+			if valueFloat > metricValue {
 				hasValidSample = true
-				largestMetricValue.value = valueFloat
+				metricValue = valueFloat
 			}
 		}
 
@@ -178,12 +173,12 @@ func (c *TspMetricCollector) computePredictionMetric(tsp *predictionapi.TimeSeri
 
 		//collect resource metric cpu or memory.
 		if metricConf.ResourceQuery != nil {
-			s := prometheus.NewMetricWithTimestamp(timestampStart, prometheus.MustNewConstMetric(c.resourceMetricWithWindow, prometheus.GaugeValue, largestMetricValue.value, labelValues...))
+			s := prometheus.NewMetricWithTimestamp(timestampStart, prometheus.MustNewConstMetric(c.resourceMetricWithWindow, prometheus.GaugeValue, metricValue, labelValues...))
 			ms = append(ms, s)
 		}
 		//collect external metric.
 		if metricConf.ExpressionQuery != nil {
-			s := prometheus.NewMetricWithTimestamp(timestampStart, prometheus.MustNewConstMetric(c.externalMetricWithWindow, prometheus.GaugeValue, largestMetricValue.value, labelValues...))
+			s := prometheus.NewMetricWithTimestamp(timestampStart, prometheus.MustNewConstMetric(c.externalMetricWithWindow, prometheus.GaugeValue, metricValue, labelValues...))
 			ms = append(ms, s)
 		}
 	}
@@ -197,16 +192,4 @@ func AggregateSignalKey(id string, labels []predictionapi.Label) string {
 	}
 	sort.Strings(labelSet)
 	return id + "#" + strings.Join(labelSet, ",")
-}
-
-func metricSelectorToQueryExpr(m *predictionapi.MetricQuery) string {
-	conditions := make([]string, 0, len(m.QueryConditions))
-	for _, cond := range m.QueryConditions {
-		values := make([]string, 0, len(cond.Value))
-		values = append(values, cond.Value...)
-		sort.Strings(values)
-		conditions = append(conditions, fmt.Sprintf("%s%s[%s]", cond.Key, cond.Operator, strings.Join(values, ",")))
-	}
-	sort.Strings(conditions)
-	return fmt.Sprintf("%s{%s}", m.MetricName, strings.Join(conditions, ","))
 }
