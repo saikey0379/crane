@@ -16,8 +16,8 @@ import (
 
 type TspMetricCollector struct {
 	client.Client
-	resourceMetric *prometheus.Desc
-	externalMetric *prometheus.Desc
+	resourceMetric           *prometheus.Desc
+	externalMetric           *prometheus.Desc
 	resourceMetricWithWindow *prometheus.Desc
 	externalMetricWithWindow *prometheus.Desc
 }
