@@ -20,6 +20,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
+
 	analysisapi "github.com/gocrane/api/analysis/v1alpha1"
 	autoscalingapi "github.com/gocrane/api/autoscaling/v1alpha1"
 	ensuranceapi "github.com/gocrane/api/ensurance/v1alpha1"
@@ -289,14 +290,15 @@ func initControllers(ctx context.Context, mgr ctrl.Manager, opts *options.Option
 	}()
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.CraneAutoscaling) {
-		if err := (&ehpa.EffectiveHPAController{
-			Client:      mgr.GetClient(),
-			Scheme:      mgr.GetScheme(),
-			RestMapper:  mgr.GetRESTMapper(),
-			Recorder:    mgr.GetEventRecorderFor("effective-hpa-controller"),
-			ScaleClient: scaleClient,
-			Config:      opts.EhpaControllerConfig,
-		}).SetupWithManager(mgr); err != nil {
+		var ehpaController = &ehpa.EffectiveHPAController{
+			Client:               mgr.GetClient(),
+			Scheme:               mgr.GetScheme(),
+			RestMapper:           mgr.GetRESTMapper(),
+			Recorder:             mgr.GetEventRecorderFor("effective-hpa-controller"),
+			ScaleClient:          scaleClient,
+			Config:               opts.EhpaControllerConfig,
+		}
+		if err := (ehpaController).SetupWithManager(mgr); err != nil {
 			klog.Exit(err, "unable to create controller", "controller", "EffectiveHPAController")
 		}
 
@@ -317,6 +319,20 @@ func initControllers(ctx context.Context, mgr ctrl.Manager, opts *options.Option
 			Recorder:   mgr.GetEventRecorderFor("hpa-observer-controller"),
 		}).SetupWithManager(mgr); err != nil {
 			klog.Exit(err, "unable to create controller", "controller", "HPAObserverController")
+		}
+
+		if opts.DataSourcePromConfig.AdapterConfigMap != "" {
+			// PrometheusAdapterConfigController
+			if err := (&ehpa.PromAdapterConfigMapController{
+				Client:         mgr.GetClient(),
+				Scheme:         mgr.GetScheme(),
+				RestMapper:     mgr.GetRESTMapper(),
+				Recorder:       mgr.GetEventRecorderFor("prometheus-adapter-configmap-controller"),
+				ConfigMap:      opts.DataSourcePromConfig.AdapterConfigMap,
+				EhpaController: ehpaController,
+			}).SetupWithManager(mgr); err != nil {
+				klog.Exit(err, "unable to create controller", "controller", "PromAdapterConfigMapController")
+			}
 		}
 
 		if err := (&evpa.EffectiveVPAController{

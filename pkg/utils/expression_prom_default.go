@@ -30,7 +30,7 @@ const (
 	CustumerExprTemplate = `sum(%s{%s})`
 )
 
-func GetCustumerExpr(metricName string, labels string) string {
+func GetCustumerExpression(metricName string, labels string) string {
 	return fmt.Sprintf(CustumerExprTemplate, metricName, labels)
 }
 

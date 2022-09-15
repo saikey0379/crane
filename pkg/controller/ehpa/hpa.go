@@ -15,6 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"k8s.io/apimachinery/pkg/labels"
+
 	autoscalingapi "github.com/gocrane/api/autoscaling/v1alpha1"
 	predictionapi "github.com/gocrane/api/prediction/v1alpha1"
 
@@ -185,6 +187,7 @@ func (c *EffectiveHPAController) GetHPAMetrics(ctx context.Context, ehpa *autosc
 		var metricsForPrediction []autoscalingv2.MetricSpec
 
 		for _, metric := range metrics {
+			var metricName string
 			var metricIdentifier string
 			var averageValue *resource.Quantity
 			switch metric.Type {
@@ -227,9 +230,11 @@ func (c *EffectiveHPAController) GetHPAMetrics(ctx context.Context, ehpa *autosc
 					averageValue = metric.Resource.Target.AverageValue
 				}
 			case autoscalingv2.ExternalMetricSourceType:
+				metricName = metric.External.Metric.Name
 				metricIdentifier = utils.GetMetricIdentifier(metric, metric.External.Metric.Name)
 				averageValue = metric.External.Target.AverageValue
 			case autoscalingv2.PodsMetricSourceType:
+				metricName = metric.Pods.Metric.Name
 				metricIdentifier = utils.GetMetricIdentifier(metric, metric.Pods.Metric.Name)
 				averageValue = metric.Pods.Target.AverageValue
 			}
@@ -245,7 +250,53 @@ func (c *EffectiveHPAController) GetHPAMetrics(ctx context.Context, ehpa *autosc
 			expressionQuery = utils.GetExpressionQueryAnnocation(metricIdentifier, ehpa.Annotations)
 			//if annocation not matched, build expressionQuery by metric and ehpa.TargetName
 			if expressionQuery == "" {
-				expressionQuery = utils.GetExpressionQueryDefault(metric, ehpa.Namespace, ehpa.Spec.ScaleTargetRef.Name)
+				// second get prometheus-adatper expressionQuery
+				switch metric.Type {
+				case autoscalingv2.ExternalMetricSourceType:
+					if len(c.NamersExternal) > 0 {
+						for _, namer := range c.NamersExternal {
+							if metricName == namer.MetricName {
+								klog.V(4).Infof("Got namers prometheus-adapter-external MetricName[%s] SeriesName[%s]", namer.MetricName, namer.SeriesName)
+								matchLabels, err := utils.GetMatchLabelsByPromAdapterAnnocation(ehpa.Annotations, metric.External.Metric.Selector.MatchLabels)
+								if err != nil {
+									klog.Errorf("Got matchLabels by prometheus-adapter annocation ehpa[%s] %v", ehpa.Name, err)
+								}
+								expressionQuery, err = namer.QueryForSeriesExternal(namer.SeriesName, ehpa.Namespace, labels.SelectorFromSet(matchLabels))
+								if err != nil {
+									klog.Errorf("Got promSelector prometheus-adapter-external %v", err)
+								} else {
+									klog.V(4).Infof("Got expressionQuery prometheus-adapter-external [%s]", expressionQuery)
+								}
+							}
+						}
+					}
+				case autoscalingv2.PodsMetricSourceType:
+					if len(c.NamersCustomer) > 0 {
+						for _, namer := range c.NamersCustomer {
+							if metricName == namer.MetricName {
+								klog.V(4).Infof("Got namers prometheus-adapter-customer MetricName[%s] SeriesName[%s]", namer.MetricName, namer.SeriesName)
+								matchLabels, err := utils.GetMatchLabelsByPromAdapterAnnocation(ehpa.Annotations, metric.Pods.Metric.Selector.MatchLabels)
+								if err != nil {
+									klog.Errorf("Got matchLabels by prometheus-adapter annocation ehpa[%s] %v", ehpa.Name, err)
+								}
+								expressionQuery, err = namer.QueryForSeriesCustomer(namer.SeriesName, ehpa.Namespace, labels.SelectorFromSet(matchLabels))
+								if err != nil {
+									klog.Errorf("Got promSelector prometheus-adapter-customer %v", err)
+								} else {
+									klog.V(4).Infof("Got expressionQuery prometheus-adapter-customer [%s]", expressionQuery)
+								}
+							}
+						}
+					}
+				}
+				// third get default expressionQuery
+				if expressionQuery == "" {
+					//if annocation not matched, and configmap is not set, build expressionQuerydefault by metric and ehpa.TargetName
+					expressionQuery = utils.GetExpressionQueryDefault(metric, ehpa.Namespace, ehpa.Spec.ScaleTargetRef.Name)
+					klog.V(4).Infof("Got expressionQuery default [%s]", expressionQuery)
+				}
+			} else {
+				klog.V(4).Infof("Got expressionQuery annocation [%s]", expressionQuery)
 			}
 
 			if len(expressionQuery) == 0 {
@@ -256,6 +307,11 @@ func (c *EffectiveHPAController) GetHPAMetrics(ctx context.Context, ehpa *autosc
 			if len(name) == 0 {
 				continue
 			}
+
+			if !utils.IsEHPAHasPredictionMetric(ehpa) {
+				continue
+			}
+
 			if _, err := utils.GetReadyPredictionMetric(name, metricIdentifier, tsp); err != nil {
 				// metric is not predictable
 				continue
