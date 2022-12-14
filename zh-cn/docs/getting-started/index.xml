@@ -20,7 +20,7 @@ scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="tru
 &lt;li>多维度的成本洞察，优化评估。通过 &lt;code>Cloud Provider&lt;/code> 支持多云计费。&lt;/li>
 &lt;/ul>
 &lt;p>&lt;strong>推荐框架&lt;/strong>&lt;/p>
-&lt;p>提供了一个可扩展的推荐框架以支持多种云资源的分析，内置了多种推荐器：资源推荐，副本推荐，闲置资源推荐。&lt;a href="/zh-cn/docs/tutorials/recommendation">了解更多&lt;/a>。&lt;/p>
+&lt;p>提供了一个可扩展的推荐框架以支持多种云资源的分析，内置了多种推荐器：资源推荐，副本推荐，HPA 推荐，闲置资源推荐。&lt;a href="/zh-cn/docs/tutorials/recommendation">了解更多&lt;/a>。&lt;/p>
 &lt;p>&lt;strong>基于预测的水平弹性器&lt;/strong>&lt;/p>
 &lt;p>EffectiveHorizontalPodAutoscaler 支持了预测驱动的弹性。它基于社区 HPA 做底层的弹性控制，支持更丰富的弹性触发策略（预测，观测，周期），让弹性更加高效，并保障了服务的质量。&lt;a href="/zh-cn/docs/tutorials/using-effective-hpa-to-scaling-with-effectiveness">了解更多&lt;/a>。&lt;/p>
 &lt;p>&lt;strong>负载感知的调度器&lt;/strong>&lt;/p>
@@ -377,7 +377,7 @@ kubectl apply -f deploy/metric-adapter&lt;/code>&lt;/pre>&lt;/div>
 &lt;/div>
 &lt;p>如果您想自定义 Crane 里配置 Prometheus 的 HTTP 地址，请参考以下的命令。如果您在集群里已存在一个 Prometheus，请将 Server 地址填于&lt;code>CUSTOMIZE_PROMETHEUS&lt;/code> 。&lt;/p>
 &lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-console" data-lang="console">&lt;span style="display:flex;">&lt;span>export CUSTOMIZE_PROMETHEUS=
-&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>if [ $CUSTOMIZE_PROMETHEUS ]; then sed -i &amp;#39;&amp;#39; &amp;#34;s/http:\/\/prometheus-server.crane-system.svc.cluster.local:8080/${CUSTOMIZE_PROMETHEUS}/&amp;#34; deploy/craned/deployment.yaml ; fi
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>if [ $CUSTOMIZE_PROMETHEUS ]; then sed -i &amp;#39;&amp;#39; &amp;#34;s/PROMETHEUS_ADDRESS/${CUSTOMIZE_PROMETHEUS}/&amp;#34; deploy/craned/deployment.yaml ; fi
 &lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="安装常见问题">安装常见问题&lt;/h2>
 &lt;h3 id="安装-crane-报错">安装 Crane 报错&lt;/h3>
 &lt;p>当您执行 &lt;code>helm install crane -n crane-system --create-namespace crane/crane&lt;/code> 命令时，可能会遇到如下错误：&lt;/p>
