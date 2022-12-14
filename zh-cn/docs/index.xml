@@ -245,7 +245,6 @@ Prometheus 是当下流行的开源监控系统，通过 Prometheus 可以获取
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">spec&lt;/span>:
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">containers&lt;/span>:
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">args&lt;/span>:
-&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - --&lt;span style="color:#ae81ff">prometheus-address=http://prometheus.aispeech.com&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - --&lt;span style="color:#ae81ff">prometheus-adapter-configmap-namespace=monitoring&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - --&lt;span style="color:#ae81ff">prometheus-adapter-configmap-name=prometheus-adapter-config&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - --&lt;span style="color:#ae81ff">prometheus-adapter-configmap-key=config.yaml&lt;/span>
